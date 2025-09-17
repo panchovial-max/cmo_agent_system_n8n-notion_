@@ -483,7 +483,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "error-handler-workflow-id",
     "timezone": "America/New_York",
-    "cmoAgentDbId": "YOUR_CMO_AGENT_DATABASE_ID",
+    "cmoAgentDbId": "1f2ec2ffea5e81ac9413cb2ea8243b03",
     "agentRelationshipsDbId": "YOUR_AGENT_RELATIONSHIPS_DATABASE_ID", 
     "n8nIntegrationsDbId": "YOUR_N8N_INTEGRATIONS_DATABASE_ID",
     "marketingTasksDbId": "YOUR_MARKETING_TASKS_DATABASE_ID"
