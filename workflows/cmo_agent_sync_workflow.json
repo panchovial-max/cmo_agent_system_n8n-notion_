@@ -1,0 +1,495 @@
+{
+  "name": "CMO Agent Management System - Notion Sync",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 14,
+              "triggerAtMinute": 30
+            },
+            {
+              "triggerAtHour": 18,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Sync",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getMany",
+        "databaseId": "{{ $workflow.settings.cmoAgentDbId }}",
+        "options": {
+          "sorts": [
+            {
+              "key": "Last_Modified",
+              "direction": "descending"
+            }
+          ]
+        }
+      },
+      "id": "get-agents",
+      "name": "Get CMO Agents",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        200
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getMany",
+        "databaseId": "{{ $workflow.settings.agentRelationshipsDbId }}",
+        "options": {}
+      },
+      "id": "get-relationships",
+      "name": "Get Agent Relationships",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getMany",
+        "databaseId": "{{ $workflow.settings.n8nIntegrationsDbId }}",
+        "options": {}
+      },
+      "id": "get-integrations",
+      "name": "Get n8n Integrations",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        400
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getMany",
+        "databaseId": "{{ $workflow.settings.marketingTasksDbId }}",
+        "options": {
+          "filter": {
+            "filters": [
+              {
+                "property": "Status",
+                "select": {
+                  "equals": "In Progress"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "get-active-tasks",
+      "name": "Get Active Marketing Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        500
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate and synchronize data across all databases\nconst agents = $input.first().json.results || [];\nconst relationships = $input.all()[1].json.results || [];\nconst integrations = $input.all()[2].json.results || [];\nconst tasks = $input.all()[3].json.results || [];\n\n// Build agent performance metrics\nconst agentPerformance = {};\n\n// Calculate task completion rates by agent\ntasks.forEach(task => {\n  const assignedAgent = task.properties?.['Assigned_Agent']?.relation?.[0]?.id;\n  if (assignedAgent) {\n    if (!agentPerformance[assignedAgent]) {\n      agentPerformance[assignedAgent] = {\n        totalTasks: 0,\n        completedTasks: 0,\n        totalBudget: 0,\n        completedBudget: 0\n      };\n    }\n    \n    agentPerformance[assignedAgent].totalTasks++;\n    const budget = task.properties?.['Budget']?.number || 0;\n    agentPerformance[assignedAgent].totalBudget += budget;\n    \n    if (task.properties?.['Status']?.select?.name === 'Completed') {\n      agentPerformance[assignedAgent].completedTasks++;\n      agentPerformance[assignedAgent].completedBudget += budget;\n    }\n  }\n});\n\n// Build agent hierarchy map\nconst agentHierarchy = {};\nrelationships.forEach(rel => {\n  const parentAgent = rel.properties?.['Parent_Agent']?.relation?.[0]?.id;\n  const childAgent = rel.properties?.['Child_Agent']?.relation?.[0]?.id;\n  \n  if (parentAgent && childAgent) {\n    if (!agentHierarchy[parentAgent]) {\n      agentHierarchy[parentAgent] = [];\n    }\n    agentHierarchy[parentAgent].push({\n      childId: childAgent,\n      relationshipType: rel.properties?.['Relationship_Type']?.select?.name || 'Unknown',\n      dataFlow: rel.properties?.['Data_Flow']?.multi_select?.map(item => item.name) || []\n    });\n  }\n});\n\n// Prepare updates for agent records\nconst agentUpdates = agents.map(agent => {\n  const agentId = agent.id;\n  const performance = agentPerformance[agentId] || { totalTasks: 0, completedTasks: 0, totalBudget: 0, completedBudget: 0 };\n  const completionRate = performance.totalTasks > 0 ? (performance.completedTasks / performance.totalTasks * 100).toFixed(2) : 0;\n  const budgetUtilization = performance.totalBudget > 0 ? (performance.completedBudget / performance.totalBudget * 100).toFixed(2) : 0;\n  \n  const subordinates = agentHierarchy[agentId] || [];\n  \n  return {\n    json: {\n      pageId: agentId,\n      agentName: agent.properties?.['Agent_Name']?.title?.[0]?.plain_text || 'Unknown',\n      currentPerformanceScore: parseFloat(completionRate),\n      taskCompletionRate: parseFloat(completionRate),\n      budgetUtilization: parseFloat(budgetUtilization),\n      totalActiveTasks: performance.totalTasks,\n      subordinateCount: subordinates.length,\n      lastSyncTime: new Date().toISOString(),\n      hierarchyLevel: agent.properties?.['Hierarchy_Level']?.select?.name || 'Unknown',\n      status: agent.properties?.['Status']?.select?.name || 'Active',\n      subordinateAgents: subordinates\n    }\n  };\n});\n\n// Identify integration health issues\nconst integrationHealth = integrations.map(integration => {\n  const lastSync = integration.properties?.['Last_Sync']?.date?.start;\n  const status = integration.properties?.['Status']?.select?.name;\n  \n  let healthScore = 100;\n  if (status === 'Error') healthScore = 0;\n  else if (status === 'Warning') healthScore = 50;\n  else if (lastSync) {\n    const lastSyncDate = new Date(lastSync);\n    const hoursOld = (new Date() - lastSyncDate) / (1000 * 60 * 60);\n    if (hoursOld > 24) healthScore = Math.max(20, 100 - hoursOld);\n  }\n  \n  return {\n    json: {\n      integrationId: integration.id,\n      integrationName: integration.properties?.['Integration_Name']?.title?.[0]?.plain_text,\n      healthScore: Math.round(healthScore),\n      needsAttention: healthScore < 80,\n      status: status,\n      lastSync: lastSync\n    }\n  };\n});\n\n// Output structured sync data\nreturn [\n  {\n    json: {\n      syncResults: {\n        timestamp: new Date().toISOString(),\n        agentUpdates: agentUpdates.length,\n        integrationHealth: integrationHealth,\n        totalActiveAgents: agents.filter(a => a.properties?.['Status']?.select?.name === 'Active').length,\n        totalActiveTasks: tasks.length,\n        hierarchyDepth: Math.max(...agents.map(a => parseInt(a.properties?.['Hierarchy_Level']?.select?.name?.match(/\\d+/)?.[0] || '0')), 0)\n      },\n      agentUpdates: agentUpdates.map(update => update.json)\n    }\n  }\n];"
+      },
+      "id": "sync-engine",
+      "name": "Sync Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "batch-updates",
+      "name": "Batch Agent Updates",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        800,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": "={{ $json.pageId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Performance_Score",
+              "numberValue": "={{ $json.currentPerformanceScore }}"
+            },
+            {
+              "key": "Task_Completion_Rate",
+              "numberValue": "={{ $json.taskCompletionRate }}"
+            },
+            {
+              "key": "Budget_Utilization",
+              "numberValue": "={{ $json.budgetUtilization }}"
+            },
+            {
+              "key": "Active_Tasks",
+              "numberValue": "={{ $json.totalActiveTasks }}"
+            },
+            {
+              "key": "Subordinate_Count",
+              "numberValue": "={{ $json.subordinateCount }}"
+            },
+            {
+              "key": "Last_Sync",
+              "dateValue": "={{ $json.lastSyncTime }}"
+            }
+          ]
+        }
+      },
+      "id": "update-agent-performance",
+      "name": "Update Agent Performance",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        250
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.n8nIntegrationsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Integration_Name",
+              "titleValue": "CMO Agent Sync - {{ new Date().toLocaleDateString() }}"
+            },
+            {
+              "key": "Workflow_ID",
+              "textValue": "{{ $workflow.id }}"
+            },
+            {
+              "key": "Status",
+              "selectValue": "Success"
+            },
+            {
+              "key": "Last_Sync",
+              "dateValue": "{{ new Date().toISOString() }}"
+            },
+            {
+              "key": "Records_Processed",
+              "numberValue": "={{ $('sync-engine').first().json.syncResults.agentUpdates }}"
+            },
+            {
+              "key": "Sync_Type",
+              "selectValue": "Automatic"
+            }
+          ]
+        }
+      },
+      "id": "log-sync-activity",
+      "name": "Log Sync Activity",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        800,
+        450
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "performance-alert",
+              "leftValue": "={{ $json.syncResults.integrationHealth.filter(i => i.needsAttention).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-alerts",
+      "name": "Check for Alerts",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        580,
+        550
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.marketingTasksDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Task_Name",
+              "titleValue": "URGENT: System Integration Issues Detected"
+            },
+            {
+              "key": "Description",
+              "textValue": "{{ $json.syncResults.integrationHealth.filter(i => i.needsAttention).map(i => `${i.integrationName}: ${i.status}`).join(', ') }}"
+            },
+            {
+              "key": "Priority",
+              "selectValue": "High"
+            },
+            {
+              "key": "Status",
+              "selectValue": "To Do"
+            },
+            {
+              "key": "Due_Date",
+              "dateValue": "{{ new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0] }}"
+            },
+            {
+              "key": "Task_Type",
+              "selectValue": "System Maintenance"
+            },
+            {
+              "key": "Budget",
+              "numberValue": 0
+            }
+          ]
+        }
+      },
+      "id": "create-alert-task",
+      "name": "Create Alert Task",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        800,
+        650
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion-cmo-creds",
+          "name": "Notion CMO Integration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "errorWorkflow": "error-handler-workflow-id"
+      },
+      "id": "error-trigger",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Sync": {
+      "main": [
+        [
+          {
+            "node": "Get CMO Agents",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Agent Relationships",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get n8n Integrations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Active Marketing Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get CMO Agents": {
+      "main": [
+        [
+          {
+            "node": "Sync Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Agent Relationships": {
+      "main": [
+        [
+          {
+            "node": "Sync Engine",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get n8n Integrations": {
+      "main": [
+        [
+          {
+            "node": "Sync Engine",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get Active Marketing Tasks": {
+      "main": [
+        [
+          {
+            "node": "Sync Engine",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Sync Engine": {
+      "main": [
+        [
+          {
+            "node": "Batch Agent Updates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync Activity",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check for Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Agent Updates": {
+      "main": [
+        [
+          {
+            "node": "Update Agent Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Alerts": {
+      "main": [
+        [
+          {
+            "node": "Create Alert Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "createdAt": "2025-01-01T00:00:00.000Z",
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler-workflow-id",
+    "timezone": "America/New_York",
+    "cmoAgentDbId": "YOUR_CMO_AGENT_DATABASE_ID",
+    "agentRelationshipsDbId": "YOUR_AGENT_RELATIONSHIPS_DATABASE_ID", 
+    "n8nIntegrationsDbId": "YOUR_N8N_INTEGRATIONS_DATABASE_ID",
+    "marketingTasksDbId": "YOUR_MARKETING_TASKS_DATABASE_ID"
+  },
+  "versionId": "1",
+  "id": "cmo-agent-sync-workflow"
+}
+
+
