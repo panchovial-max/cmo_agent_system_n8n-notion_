@@ -484,7 +484,7 @@
     "errorWorkflow": "error-handler-workflow-id",
     "timezone": "America/New_York",
     "cmoAgentDbId": "1f2ec2ffea5e81ac9413cb2ea8243b03",
-    "agentRelationshipsDbId": "YOUR_AGENT_RELATIONSHIPS_DATABASE_ID", 
+    "agentRelationshipsDbId": "4bac25ff-9576-432a-b9bf-78b18731d5f8", 
     "n8nIntegrationsDbId": "YOUR_N8N_INTEGRATIONS_DATABASE_ID",
     "marketingTasksDbId": "YOUR_MARKETING_TASKS_DATABASE_ID"
   },
