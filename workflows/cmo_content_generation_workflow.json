@@ -1,0 +1,158 @@
+{
+  "name": "CMO Content Pipeline - Clients/Briefs/Concepts/AI Ideas",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.clientsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Client_Name", "titleValue": "Sample Client" },
+            { "key": "Industry", "selectValue": "General" }
+          ]
+        }
+      },
+      "id": "create-client",
+      "name": "Create Client (example)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        120
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.briefsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Brief_Title", "titleValue": "New Brief" },
+            { "key": "Client", "relationValue": "={{ $json.clientId }}" },
+            { "key": "Objectives", "textValue": "Increase brand awareness." },
+            { "key": "Target_Audience", "textValue": "Millennials" }
+          ]
+        }
+      },
+      "id": "create-brief",
+      "name": "Create Brief (example)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        360,
+        240
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    },
+    {
+      "parameters": {
+        "mode": "json",
+        "jsonParameters": true,
+        "options": {},
+        "jsCode": "// Prepare OpenAI prompt from Brief\nconst clientName = $json.clientName || 'Sample Client';\nconst objectives = $json.objectives || 'Increase brand awareness.';\nconst target = $json.target || 'Millennials';\nreturn [{ json: { prompt: `You are a CMO copywriting agent.\nClient: ${clientName}\nObjective: ${objectives}\nTarget: ${target}\nDeliver: 5 campaign concepts with taglines and key message, JSON array with fields: title, tagline, keyMessage, channels.` } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build OpenAI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "chat",
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert CMO copywriter. Return concise JSON only."
+          },
+          {
+            "role": "user",
+            "content": "={{ $json.prompt }}"
+          }
+        ]
+      },
+      "id": "openai-generate",
+      "name": "OpenAI: Generate Concepts",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 4,
+      "position": [
+        800,
+        240
+      ],
+      "credentials": { "openAiApi": { "id": "openai-cmo-creds", "name": "OpenAI CMO" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse JSON array of concepts from OpenAI\nlet text = $input.first().json.choices?.[0]?.message?.content || '';\ntry {\n  // Strip code fences if present\n  text = text.replace(/^```(json)?/,'').replace(/```$/,'').trim();\n  const concepts = JSON.parse(text);\n  return concepts.map((c, idx) => ({ json: { index: idx+1, title: c.title, tagline: c.tagline, keyMessage: c.keyMessage, channels: Array.isArray(c.channels) ? c.channels.join(', ') : c.channels } }));\n} catch (e) {\n  return [{ json: { parseError: e.message, raw: text } }];\n}"
+      },
+      "id": "parse-concepts",
+      "name": "Parse Concepts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.conceptsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Concept_Title", "titleValue": "={{ $json.title }}" },
+            { "key": "Tagline", "textValue": "={{ $json.tagline }}" },
+            { "key": "Key_Message", "textValue": "={{ $json.keyMessage }}" },
+            { "key": "Channels", "textValue": "={{ $json.channels }}" },
+            { "key": "Brief", "relationValue": "={{ $json.briefId }}" }
+          ]
+        }
+      },
+      "id": "create-concepts",
+      "name": "Create Concepts in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        240
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Create Client (example)", "type": "main", "index": 0 }, { "node": "Create Brief (example)", "type": "main", "index": 0 }]] },
+    "Create Brief (example)": { "main": [[{ "node": "Build OpenAI Prompt", "type": "main", "index": 0 }]] },
+    "Build OpenAI Prompt": { "main": [[{ "node": "OpenAI: Generate Concepts", "type": "main", "index": 0 }]] },
+    "OpenAI: Generate Concepts": { "main": [[{ "node": "Parse Concepts", "type": "main", "index": 0 }]] },
+    "Parse Concepts": { "main": [[{ "node": "Create Concepts in Notion", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "clientsDbId": "YOUR_CLIENTS_DB_ID",
+    "briefsDbId": "YOUR_BRIEFS_DB_ID",
+    "conceptsDbId": "YOUR_CONCEPTS_DB_ID"
+  },
+  "versionId": "1",
+  "id": "cmo-content-generation-workflow"
+}
+
+
