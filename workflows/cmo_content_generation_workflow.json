@@ -208,7 +208,7 @@
         360
       ],
       "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
-    }
+    },
     {
       "parameters": {
         "resource": "databasePage",
