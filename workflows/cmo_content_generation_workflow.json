@@ -263,7 +263,7 @@
   },
   "settings": {
     "clientsDbId": "YOUR_CLIENTS_DB_ID",
-    "briefsDbId": "YOUR_BRIEFS_DB_ID",
+    "briefsDbId": "270ec2ffea5e81e3aeeddee0a59c79be",
     "conceptsDbId": "YOUR_CONCEPTS_DB_ID",
     "n8nIntegrationsDbId": "1e2b4b25-6b4a-4adf-baf6-cf658d41b051"
   },
