@@ -1,6 +1,6 @@
 {
-  "name": "CMO Content Pipeline - Clients/Briefs/Concepts/AI Ideas",
-  "active": false,
+  "name": "CMO Content Pipeline - Brief → OpenAI Concepts",
+  "active": true,
   "nodes": [
     {
       "parameters": {},
@@ -64,7 +64,7 @@
         "mode": "json",
         "jsonParameters": true,
         "options": {},
-        "jsCode": "// Prepare OpenAI prompt from Brief\nconst clientName = $json.clientName || 'Sample Client';\nconst objectives = $json.objectives || 'Increase brand awareness.';\nconst target = $json.target || 'Millennials';\nreturn [{ json: { prompt: `You are a CMO copywriting agent.\nClient: ${clientName}\nObjective: ${objectives}\nTarget: ${target}\nDeliver: 5 campaign concepts with taglines and key message, JSON array with fields: title, tagline, keyMessage, channels.` } }];"
+        "jsCode": "// Build prompt from Notion Brief page input\nconst page = $input.first().json;\nconst pageId = page.id;\nconst props = page.properties || {};\nfunction getRichText(property) {\n  const arr = props[property]?.rich_text || props[property]?.title || [];\n  return arr[0]?.plain_text || '';\n}\nconst briefTitle = getRichText('Brief_Title') || 'Untitled Brief';\nconst objectives = getRichText('Objectives') || 'Improve marketing metrics.';\nconst target = getRichText('Target_Audience') || 'General audience';\nconst prompt = `You are a senior CMO copywriting agent.\\nBrief: ${briefTitle}\\nObjective: ${objectives}\\nTarget audience: ${target}\\nDeliver EXACTLY a JSON array of 5 objects with keys: title, tagline, keyMessage, channels (array of 2-4 recommended channels). No prose.`;\nreturn [{ json: { briefId: pageId, prompt } }];"
       },
       "id": "build-prompt",
       "name": "Build OpenAI Prompt",
@@ -102,7 +102,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse JSON array of concepts from OpenAI\nlet text = $input.first().json.choices?.[0]?.message?.content || '';\ntry {\n  // Strip code fences if present\n  text = text.replace(/^```(json)?/,'').replace(/```$/,'').trim();\n  const concepts = JSON.parse(text);\n  return concepts.map((c, idx) => ({ json: { index: idx+1, title: c.title, tagline: c.tagline, keyMessage: c.keyMessage, channels: Array.isArray(c.channels) ? c.channels.join(', ') : c.channels } }));\n} catch (e) {\n  return [{ json: { parseError: e.message, raw: text } }];\n}"
+        "jsCode": "// Parse JSON array of concepts and carry briefId\nlet text = $input.first().json.choices?.[0]?.message?.content || '';\nconst briefId = $items(0)[0]?.json?.briefId;\ntry {\n  text = text.replace(/^```(json)?/,'').replace(/```$/,'').trim();\n  const concepts = JSON.parse(text);\n  return concepts.map((c, idx) => ({ json: { index: idx+1, title: c.title, tagline: c.tagline, keyMessage: c.keyMessage, channels: Array.isArray(c.channels) ? c.channels.join(', ') : c.channels, briefId } }));\n} catch (e) {\n  return [{ json: { parseError: e.message, raw: text, briefId } }];\n}"
       },
       "id": "parse-concepts",
       "name": "Parse Concepts",
@@ -138,13 +138,30 @@
       ],
       "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
     }
+    ,
+    {
+      "parameters": {
+        "event": "pageAddedToDatabase",
+        "databaseId": "{{ $workflow.settings.briefsDbId }}"
+      },
+      "id": "brief-created",
+      "name": "Brief Created",
+      "type": "n8n-nodes-base.notionTrigger",
+      "typeVersion": 1,
+      "position": [
+        140,
+        60
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    }
   ],
   "connections": {
     "Manual Trigger": { "main": [[{ "node": "Create Client (example)", "type": "main", "index": 0 }, { "node": "Create Brief (example)", "type": "main", "index": 0 }]] },
     "Create Brief (example)": { "main": [[{ "node": "Build OpenAI Prompt", "type": "main", "index": 0 }]] },
     "Build OpenAI Prompt": { "main": [[{ "node": "OpenAI: Generate Concepts", "type": "main", "index": 0 }]] },
     "OpenAI: Generate Concepts": { "main": [[{ "node": "Parse Concepts", "type": "main", "index": 0 }]] },
-    "Parse Concepts": { "main": [[{ "node": "Create Concepts in Notion", "type": "main", "index": 0 }]] }
+    "Parse Concepts": { "main": [[{ "node": "Create Concepts in Notion", "type": "main", "index": 0 }]] },
+    "Brief Created": { "main": [[{ "node": "Build OpenAI Prompt", "type": "main", "index": 0 }]] }
   },
   "settings": {
     "clientsDbId": "YOUR_CLIENTS_DB_ID",
