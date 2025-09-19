@@ -265,7 +265,7 @@
     "clientsDbId": "YOUR_CLIENTS_DB_ID",
     "briefsDbId": "YOUR_BRIEFS_DB_ID",
     "conceptsDbId": "YOUR_CONCEPTS_DB_ID",
-    "n8nIntegrationsDbId": "YOUR_N8N_INTEGRATIONS_DATABASE_ID"
+    "n8nIntegrationsDbId": "1e2b4b25-6b4a-4adf-baf6-cf658d41b051"
   },
   "versionId": "1",
   "id": "cmo-content-generation-workflow"
