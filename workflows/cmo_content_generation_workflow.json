@@ -115,6 +115,102 @@
     },
     {
       "parameters": {
+        "jsCode": "// Summarize results across all items from Parse Concepts\nconst items = $input.all();\nconst hasError = items.some(i => i.json.parseError);\nconst conceptsCount = items.filter(i => !i.json.parseError).length;\nconst briefId = items[0]?.json?.briefId || '';\nreturn [{ json: { hasError, conceptsCount, briefId, runAt: new Date().toISOString() } }];"
+      },
+      "id": "summarize-results",
+      "name": "Summarize Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hasError }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "isTrue"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "was-error",
+      "name": "Was Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.n8nIntegrationsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Integration_Name", "titleValue": "Brief Concepts Generation" },
+            { "key": "Workflow_ID", "textValue": "={{ $workflow.id }}" },
+            { "key": "Status", "selectValue": "Success" },
+            { "key": "Last_Sync", "dateValue": "={{ $json.runAt }}" },
+            { "key": "Records_Processed", "numberValue": "={{ $json.conceptsCount }}" },
+            { "key": "Sync_Type", "selectValue": "Automatic" }
+          ]
+        }
+      },
+      "id": "log-success",
+      "name": "Log Success Generation",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        500
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": "{{ $workflow.settings.n8nIntegrationsDbId }}",
+        "propertiesUi": {
+          "propertyValues": [
+            { "key": "Integration_Name", "titleValue": "Brief Concepts Generation" },
+            { "key": "Workflow_ID", "textValue": "={{ $workflow.id }}" },
+            { "key": "Status", "selectValue": "Error" },
+            { "key": "Last_Sync", "dateValue": "={{ $json.runAt }}" },
+            { "key": "Records_Processed", "numberValue": 0 },
+            { "key": "Sync_Type", "selectValue": "Automatic" }
+          ]
+        }
+      },
+      "id": "log-error",
+      "name": "Log Error Generation",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        360
+      ],
+      "credentials": { "notionApi": { "id": "notion-cmo-creds", "name": "Notion CMO Integration" } }
+    }
+    {
+      "parameters": {
         "resource": "databasePage",
         "operation": "create",
         "databaseId": "{{ $workflow.settings.conceptsDbId }}",
@@ -160,13 +256,16 @@
     "Create Brief (example)": { "main": [[{ "node": "Build OpenAI Prompt", "type": "main", "index": 0 }]] },
     "Build OpenAI Prompt": { "main": [[{ "node": "OpenAI: Generate Concepts", "type": "main", "index": 0 }]] },
     "OpenAI: Generate Concepts": { "main": [[{ "node": "Parse Concepts", "type": "main", "index": 0 }]] },
-    "Parse Concepts": { "main": [[{ "node": "Create Concepts in Notion", "type": "main", "index": 0 }]] },
+    "Parse Concepts": { "main": [[{ "node": "Create Concepts in Notion", "type": "main", "index": 0 }, { "node": "Summarize Results", "type": "main", "index": 0 }]] },
+    "Summarize Results": { "main": [[{ "node": "Was Error?", "type": "main", "index": 0 }]] },
+    "Was Error?": { "main": [[{ "node": "Log Error Generation", "type": "main", "index": 0 }], [{ "node": "Log Success Generation", "type": "main", "index": 0 }]] },
     "Brief Created": { "main": [[{ "node": "Build OpenAI Prompt", "type": "main", "index": 0 }]] }
   },
   "settings": {
     "clientsDbId": "YOUR_CLIENTS_DB_ID",
     "briefsDbId": "YOUR_BRIEFS_DB_ID",
-    "conceptsDbId": "YOUR_CONCEPTS_DB_ID"
+    "conceptsDbId": "YOUR_CONCEPTS_DB_ID",
+    "n8nIntegrationsDbId": "YOUR_N8N_INTEGRATIONS_DATABASE_ID"
   },
   "versionId": "1",
   "id": "cmo-content-generation-workflow"
